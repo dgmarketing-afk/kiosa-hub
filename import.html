@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KIOSA · Import data</title><meta name="robots" content="noindex,nofollow">
+<script src="config.js"></script><script src="backend.js"></script>
+<style>body{margin:0;background:#F3F0E9;font-family:Manrope,"IBM Plex Sans Thai",sans-serif;color:#2A251E}
+main{max-width:640px;margin:40px auto;padding:0 16px}.card{background:#fff;border:1px solid #E6DFD1;border-radius:20px;padding:24px}
+h1{font-family:Georgia,serif;font-weight:400;margin:0 0 8px}p{color:#7A7266}button{background:#BFA77B;color:#fff;border:0;border-radius:999px;padding:12px 20px;font-size:15px;font-weight:600;cursor:pointer}
+pre{background:#F8F6F1;border-radius:10px;padding:12px;white-space:pre-wrap;font-size:12.5px;max-height:320px;overflow:auto}</style></head>
+<body><nav class="nav" style="display:none"></nav><main><div class="card">
+<h1>Import data</h1><p>One-time move from the old Hub. Choose the <b>kiosa-export.json</b> file Claude gave you, then press Import. Photos are uploaded to Google Drive first, then every record is written to the Google Sheet. Keep this page open until it says Done.</p>
+<p><input type="file" id="f" accept=".json,application/json"></p><button id="go">Import</button><pre id="log"></pre></div></main>
+<script>
+const log=t=>{document.getElementById("log").textContent+=t+"\n"};
+document.getElementById("go").onclick=async()=>{
+  const file=document.getElementById("f").files[0];if(!file){alert("Choose the export file first");return}
+  await window.claude.use("db");
+  const x=JSON.parse(await file.text());const map={};
+  log(`Files to upload: ${x.files.length}`);
+  for(const [i,f] of x.files.entries()){
+    try{const r=await KIOSA.call("upload",{base64:f.base64,mime:f.mime,name:f.name,folder:f.folder});map[f.oldId]=r.id;log(`  ${i+1}/${x.files.length} ${f.folder}/${f.name} ✓`)}
+    catch(e){log(`  ${i+1}/${x.files.length} ${f.name} ✗ ${e.message}`)}
+  }
+  const swap=v=>Array.isArray(v)?v.map(id=>map[id]||id):v;
+  for(const d of x.collections.listings||[])for(const k of ["photos","renders","aerials","sitePlan"])if(d.data[k])d.data[k]=swap(d.data[k]);
+  for(const d of x.collections.config||[])if(d.data.checklistPdf?.id&&map[d.data.checklistPdf.id])d.data.checklistPdf.id=map[d.data.checklistPdf.id];
+  for(const [c,docs] of Object.entries(x.collections)){
+    for(let i=0;i<docs.length;i+=5){await KIOSA.call("import",{collection:c,docs:docs.slice(i,i+5)})}
+    log(`${c}: ${docs.length} record(s) ✓`);
+  }
+  log("Done. Open the back office: index.html");
+};
+</script></body></html>
