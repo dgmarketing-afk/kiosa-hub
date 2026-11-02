@@ -231,7 +231,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;margin:0}
 .facts div{background:var(--raised);padding:11px 14px;min-width:0}
 .facts dt{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.facts dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.facts dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;white-space:pre-line}
 .sect h3{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--brass);font-weight:700;margin:0 0 10px}
 .sect p{margin:0;white-space:pre-line}
 .seg-mini{display:flex;flex-wrap:wrap;gap:6px}
@@ -1397,6 +1397,7 @@ function openDrawer(id){
     sellable&&l.minPrice&&["Lowest accepted",money(l.minPrice,cur)],
     sellable&&unitOk(l)&&["Price per "+UNITB[l.unitBasis][1],money(l.unitPrice,cur)],
     sellable&&UNITB[l.unitBasis]&&l.unitMinPrice&&["Lowest per "+UNITB[l.unitBasis][1],money(l.unitMinPrice,cur)],
+    compsOf(l).length&&["Market prices",compTxt(l,cur)],
     l.apprUnit&&["Govt. appraisal",apprTxt(l,cur)+(apprTotal(l)&&l.price&&sellable?` · asking is ${(l.price/apprTotal(l)).toFixed(1)}×`:"")],
     rentable&&["Rent / month",money(l.rentPrice,cur)],
     l.land&&["Land",l.land],
@@ -2234,6 +2235,12 @@ const unitOk=l=>!!(UNITB[l.unitBasis]&&l.unitPrice);
 const qtyTxt=q=>Number(q).toLocaleString("en-US",{maximumFractionDigits:2});
 /* government appraisal (internal only: drawer, team messages, reports; never in client messages or brochures) */
 const apprB=l=>UNITB[l.apprBasis||"sqw"];
+/* market comparables: up to 3 asking prices of similar properties nearby (internal reference) */
+const compsOf=l=>(l.comps||[]).filter(c=>c&&Number(c.price));
+const compB=l=>UNITB[l.compBasis||l.unitBasis||"sqw"];
+const compAvg=l=>{const c=compsOf(l);return c.length?Math.round(c.reduce((a,x)=>a+Number(x.price),0)/c.length):null};
+const ourUnit=l=>{const b=l.compBasis||l.unitBasis||"sqw";if(l.unitPrice&&l.unitBasis===b)return Number(l.unitPrice);const q=unitQty(l,b);return q&&l.price?Math.round(l.price/q):null};
+const compTxt=(l,cur)=>compsOf(l).map(x=>`${moneyTh(x.price,cur)} / ${UNITB[l.compBasis||l.unitBasis||"sqw"][0]}`).join("\n");
 const apprTotal=l=>{if(!l.apprUnit)return null;const q=unitQty(l,l.apprBasis||"sqw");return q?Math.round(l.apprUnit*q):null};
 const apprTxt=(l,cur)=>l.apprUnit?`${money(l.apprUnit,cur)} / ${apprB(l)[1]}${apprTotal(l)?` · ≈ ${money(apprTotal(l),cur)} total`:""}${l.apprRound?` · ${l.apprRound}`:""}`:"";
 /* extra lines for the detailed message */
@@ -2302,6 +2309,7 @@ function tplTeam(l,aud,o={}){
   if(sell)L.push(`Asking price: ${money(l.price,cur)}${thb(l.price)}`);
   if(sell&&unitOk(l))L.push(`Price per ${UNITB[l.unitBasis][1]}: ${money(l.unitPrice,cur)}`);
   if(l.apprUnit)L.push(`Government appraisal: ${apprTxt(l,cur)}`);
+  if(compsOf(l).length)L.push("Market prices: "+compTxt(l,cur).split("\n").join(" · "));
   if(rent)L.push(`Rent: ${money(l.rentPrice,cur)} / month${thb(l.rentPrice)}`);
   if(sell&&l.transferFee&&ENUM.transferFee[l.transferFee])L.push("Transfer fees: "+ENUM.transferFee[l.transferFee][1]+(l.transferNote?" ("+l.transferNote+")":""));
   if(l.status!=="available")L.push("Status: "+STATUS[l.status]);
@@ -2454,6 +2462,9 @@ function openForm(l){
           <label>Appraisal unit<select id="f_apprBasis">${Object.entries(UNITB).map(([k,u])=>`<option value="${k}" ${(l.apprBasis||"sqw")===k?"selected":""}>per ${u[1]} · ต่อ ${u[0]}</option>`).join("")}</select></label>
           ${F("apprRound","Appraisal round / source",l.apprRound,"text","full","e.g. รอบปี 2566–2569 · กรมธนารักษ์")}
           <p class="help" id="apprHelp">Internal only: shown in the property details, Sales / Co-Agent messages and reports. Never shown in client messages or brochures.</p>
+          <p class="help" style="margin-top:6px"><b style="color:var(--ink)">Market prices</b> · what other sellers ask nearby, for reference (internal only)</p>
+          <label>Market price unit<select id="f_compBasis">${Object.entries(UNITB).map(([k,u])=>`<option value="${k}" ${(l.compBasis||l.unitBasis||"sqw")===k?"selected":""}>per ${u[1]} · ต่อ ${u[0]}</option>`).join("")}</select></label>
+          ${[0,1,2].map(i=>{const c=(l.comps||[])[i]||{};return `<label>Market price ${i+1} (per unit)<input id="f_compPrice${i}" type="number" inputmode="decimal" step="any" value="${esc(c.price??"")}"></label>`}).join("")}
           ${F("rentPrice","Monthly rent",l.rentPrice,"number")}
           <label>Transfer fees paid by<select id="f_transferFee"><option value="">– Not agreed yet –</option>${Object.entries(ENUM.transferFee).map(([v,t])=>`<option value="${v}" ${l.transferFee===v?"selected":""}>${t[1]} · ${t[0]}</option>`).join("")}</select></label>
           ${F("transferNote","Transfer fee details (optional)",l.transferNote,"text","full","e.g. Seller pays transfer fee and tax; buyer pays mortgage registration")}
@@ -2742,7 +2753,7 @@ ${g("locText").value}`,{modelTier:"default"});
       renders:extra.renders,aerials:extra.aerials,sitePlan:extra.sitePlan,advisorName:t("advisorName"),advisorPhone:t("advisorPhone"),viewingUrl:safeUrl(t("viewingUrl")),heliTour:g("heliTour").checked,intro:t("intro"),introEn:t("introEn"),introZh:t("introZh"),perspective:t("perspective"),perspectiveEn:t("perspectiveEn"),perspectiveZh:t("perspectiveZh"),layoutText:t("layoutText"),layoutTextEn:t("layoutTextEn"),layoutTextZh:t("layoutTextZh"),uses:t("uses"),usesEn:t("usesEn"),usesZh:t("usesZh"),suitedFor:t("suitedFor"),suitedForEn:t("suitedForEn"),suitedForZh:t("suitedForZh"),considerations:t("considerations"),considerationsEn:t("considerationsEn"),considerationsZh:t("considerationsZh"),locText:t("locText"),locTextEn:t("locTextEn"),locTextZh:t("locTextZh"),landSource:t("landSource"),areaBasis:t("areaBasis"),configuration:t("configuration"),condition:t("condition"),occupancy:t("occupancy"),tenure:t("tenure"),handover:t("handover"),planSource:t("planSource"),invBasis:t("invBasis"),invIncome:t("invIncome"),invCosts:t("invCosts"),invYield:t("invYield"),included:t("included"),leases:t("leases"),recurring:t("recurring"),transferTerms:t("transferTerms"),availability:t("availability"),documents:t("documents"),priceUpdated:g("priceUpdated").value||null,infoDate:g("infoDate").value||null,chkAuthority:g("chkAuthority").checked,chkVerified:g("chkVerified").checked,chkMedia:g("chkMedia").checked,chkFinal:g("chkFinal").checked,highlights:t("highlights"),
       nameEn:t("nameEn"),locationEn:t("locationEn"),highlightsEn:t("highlightsEn"),
       nameZh:t("nameZh"),locationZh:t("locationZh"),highlightsZh:t("highlightsZh"),
-      currency:g("currency").value,price:n("price"),minPrice:n("minPrice"),rentPrice:n("rentPrice"),unitBasis:g("unitBasis").value,unitPrice:g("unitBasis").value?n("unitPrice"):null,unitMinPrice:g("unitBasis").value?n("unitMinPrice"):null,apprUnit:n("apprUnit"),apprBasis:g("apprBasis").value,apprRound:t("apprRound"),
+      currency:g("currency").value,price:n("price"),minPrice:n("minPrice"),rentPrice:n("rentPrice"),unitBasis:g("unitBasis").value,unitPrice:g("unitBasis").value?n("unitPrice"):null,unitMinPrice:g("unitBasis").value?n("unitMinPrice"):null,apprUnit:n("apprUnit"),apprBasis:g("apprBasis").value,apprRound:t("apprRound"),compBasis:g("compBasis").value,comps:[0,1,2].map(i=>({price:n("compPrice"+i)})).filter(c=>c.price),
       commType:g("commType").value,commValue:n("commValue"),commMin:n("commMin"),rentCommMonths:n("rentCommMonths"),salePct:n("salePct"),coAgentPct:n("coAgentPct"),
       listedMonth:g("listedMonth").value||null,closedPrice:n("closedPrice"),transferDate:g("transferDate").value||null,closedDate:g("closedDate").value||null,closedViaAgent:g("closedViaAgent").checked,
       photos,example:isNew?false:!!l.example,updatedAt:Date.now()};
@@ -2852,7 +2863,7 @@ function buildXlsx(rows,o){
     /* price */
     ["Currency",l=>l.currency||"THB",0,9],["Asking price",l=>l.price??null,NUM],["Lowest price",l=>o.min?(l.minPrice??null):null,NUM],
     ["Price unit",l=>ul(l)?"per "+ul(l)[1]:"",0,12],["Asking price per unit",l=>ul(l)?(l.unitPrice??null):null,NUM],["Lowest price per unit",l=>ul(l)&&o.min?(l.unitMinPrice??null):null,NUM],
-    ["Rent / month",l=>l.rentPrice??null,NUM],["Asking price (THB)",l=>l.price?Math.round(toTHB(l.price,l.currency||"THB")):null,NUM],["Price last confirmed",l=>l.priceUpdated||"",0,12],["Govt. appraisal per unit",l=>l.apprUnit??null,NUM],["Appraisal unit",l=>l.apprUnit?"per "+apprB(l)[1]:"",0,12],["Govt. appraisal total",l=>apprTotal(l),NUM],["Appraisal round / source",l=>l.apprRound||"",0,20],
+    ["Rent / month",l=>l.rentPrice??null,NUM],["Asking price (THB)",l=>l.price?Math.round(toTHB(l.price,l.currency||"THB")):null,NUM],["Price last confirmed",l=>l.priceUpdated||"",0,12],["Govt. appraisal per unit",l=>l.apprUnit??null,NUM],["Appraisal unit",l=>l.apprUnit?"per "+apprB(l)[1]:"",0,12],["Govt. appraisal total",l=>apprTotal(l),NUM],["Appraisal round / source",l=>l.apprRound||"",0,20],["Market price unit",l=>compsOf(l).length?"per "+compB(l)[1]:"",0,12],...[0,1,2].map(i=>[`Market price ${i+1}`,l=>compsOf(l)[i]?.price??null,NUM]),
     ["Transfer fee terms",l=>tf(l)?tf(l)[1]:"",0,20],["Transfer fee details",l=>l.transferNote||"",0,28],["Transfer terms (profile)",l=>l.transferTerms||"",0,28],
     /* commission terms */
     ["Commission type",(l,x)=>x.rentOnly?`${l.rentCommMonths??config.defaultRentMonths} month(s) rent`:l.commType==="fixed"?"Fixed":l.commType==="margin"?"Margin over owner's net price":"% of sale price",0,16],
@@ -2960,7 +2971,10 @@ function buildCrmXlsx(o){
   const lst=id=>listings.find(l=>l.id===id);
   const ints=interests.filter(x=>!o.noLost||x.stage!=="lost");
   const dt=t=>t?new Date(t).toISOString().slice(0,10):"";
-  const C=[["Client",c=>c.name||"",0,24],...(o.contact?[["Phone",c=>c.phone||"",0,14],["LINE / WeChat",c=>c.line||"",0,16]]:[]),
+  const C=[["Client",c=>c.name||"",0,24],...(o.contact?[["Phone",c=>c.phone||"",0,14],["LINE ID",c=>c.line||"",0,16],["WeChat / WhatsApp",c=>c.wechat||"",0,16],["Email",c=>c.email||"",0,22]]:[]),
+    ["Buy / rent",c=>c.wantDeal==="rent"?"Rent":"Buy",0,9],["Purpose",c=>CPURPOSE[c.purpose]||"",0,20],["Budget from (THB)",c=>c.budgetMin??null,"#,##0"],["Budget up to (THB)",c=>c.budgetMax??null,"#,##0"],
+    ["Wanted type",c=>(c.wantTypes||[]).map(k=>SEG.type.map[k]).join(", "),0,16],["Wanted area",c=>(c.wantZones||[]).map(k=>{const [cc,z]=k.split(".");return zName(cc,z)}).join(", "),0,20],["Other requirements",c=>c.wantNote||"",0,30],
+    ["Properties that fit now",c=>(c.budgetMin||c.budgetMax||(c.wantTypes||[]).length||(c.wantZones||[]).length)?matchesFor(c).map(m=>m.l.code).join(", "):"",0,30],
     ["Nationality",c=>c.nationality||"",0,12],["Came from",c=>c.source||"",0,12],["Sale in charge",c=>c.sale||"",0,16],["PDPA consent",c=>c.consent?"Yes":"Not recorded",0,12],
     ["Added",c=>dt(c.createdAt),0,12],["Properties of interest",(c,x)=>x.ls.length,0,10],["Codes",(c,x)=>x.ls.map(i=>lst(i.listingId)?.code||"Deleted").join(", "),0,30],
     ["Furthest stage",(c,x)=>x.bought.length?STAGES.won:x.ls.length?STAGES[bestStage(x.ls)]||"":"",0,18],["Last contact",(c,x)=>x.ls.map(i=>i.date||"").sort().pop()||"",0,12],
@@ -2976,7 +2990,7 @@ function buildCrmXlsx(o){
   const cnt=(arr,f)=>Object.entries(arr.reduce((a,x)=>{const k=f(x)||"Not recorded";a[k]=(a[k]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]);
   const S=[["KIOSA · CRM report",""],["As of",new Date().toLocaleString("en-GB")],["Clients",clients.length],["Interest records",ints.length],["Clients who bought or leased",clients.filter(c=>listings.some(l=>l.buyerClientId===c.id)).length],[],
     ["By stage","Records"],...STAGE_ORDER.map(k=>[STAGES[k],ints.filter(i=>i.stage===k).length]),[],
-    ["Clients by source","Clients"],...cnt(clients,c=>c.source),[],["Clients by Sale in charge","Clients"],...cnt(clients,c=>c.sale),[],
+    ["Clients by source","Clients"],...cnt(clients,c=>c.source),[],["Clients by Sale in charge","Clients"],...cnt(clients,c=>c.sale),[],["Clients by purpose","Clients"],...cnt(clients,c=>CPURPOSE[c.purpose]),[],
     ["Most interest","Records"],...cnt(ints,i=>{const l=lst(i.listingId);return l?l.code+" · "+nm(l):"Deleted listing"}).slice(0,15)];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws1,"Clients");XLSX.utils.book_append_sheet(wb,ws2,"Interests");XLSX.utils.book_append_sheet(wb,kvSheet(S,[44,12]),"Summary");
@@ -3174,6 +3188,21 @@ applyCodes();applyGeo();renderLegend();
 const STAGES={inquiry:"Inquiry",viewing:"Viewing booked",viewed:"Viewed",negotiating:"Negotiating",reserved:"Reserved",won:"Bought / leased",lost:"Not proceeding"};
 const STAGE_ORDER=Object.keys(STAGES);
 const CSOURCES=["Facebook","Instagram","LINE","Website","Referral","Co-Agent","Walk-in","Event","Other"];
+const CPURPOSE={live:"Own home",holiday:"Holiday / second home",invest:"Investment / rental income",landbank:"Land bank",develop:"Development project",business:"Business / office",other:"Other"};
+/* properties that fit a client's budget, type and area (sale or rent) */
+function matchesFor(c){
+  const lo=Number(c.budgetMin)||0,hi=Number(c.budgetMax)||0,types=c.wantTypes||[],zones=c.wantZones||[],rent=c.wantDeal==="rent";
+  const taken=new Set(leadsOfClient(c.id).map(x=>x.listingId));
+  return listings.filter(l=>IN_HAND.includes(l.status)&&l.status!=="hold"&&!l.example).map(l=>{
+    const p=toTHB(rent?l.rentPrice:l.price,l.currency||"THB");let score=0,why=[];
+    if(rent?dK(l)==="S":dK(l)==="R")return null;
+    if(hi||lo){if(!p)return null;if(hi&&p>hi*1.1)return null;if(lo&&p<lo*0.7)return null;score+=2;why.push("budget")}
+    if(types.length){if(!types.includes(l.type))return null;score+=2;why.push("type")}
+    if(zones.length){if(!zones.includes(l.country+"."+l.zone))return null;score+=2;why.push("area")}
+    return {l,score,why,linked:taken.has(l.id)};
+  }).filter(Boolean).sort((a,b)=>b.score-a.score||(a.l.price||0)-(b.l.price||0));
+}
+const budgetTxt=c=>{const f=v=>short(Number(v),"THB");return c.budgetMin&&c.budgetMax?`${f(c.budgetMin)} – ${f(c.budgetMax)}`:c.budgetMax?"up to "+f(c.budgetMax):c.budgetMin?"from "+f(c.budgetMin):""};
 const leadsOf=lid=>interests.filter(x=>x.listingId===lid);
 const leadsOfClient=cid=>interests.filter(x=>x.clientId===cid);
 const clientOf=id=>clients.find(c=>c.id===id);
@@ -3214,7 +3243,7 @@ function leadForm(lid){
     <label class="full">Client<select id="lf_client"><option value="__new">+ New client</option>${opts.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.phone?" · "+esc(c.phone):""}</option>`).join("")}</select></label>
     <div class="full" id="lf_new" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
       <label>Name *<input id="lf_name"></label><label>Phone<input id="lf_phone" inputmode="tel"></label>
-      <label>LINE / WeChat<input id="lf_line"></label><label>Came from<select id="lf_source"><option value="">–</option>${CSOURCES.map(x=>`<option>${x}</option>`).join("")}</select></label>
+      <label>LINE ID<input id="lf_line"></label><label>Came from<select id="lf_source"><option value="">–</option>${CSOURCES.map(x=>`<option>${x}</option>`).join("")}</select></label>
       <label class="inline full" style="grid-column:1/-1"><input type="checkbox" id="lf_consent"> Client agreed to KIOSA keeping these details (PDPA)</label></div>
     <label>Stage<select id="lf_stage">${STAGE_ORDER.filter(k=>k!=="won").map(k=>`<option value="${k}">${STAGES[k]}</option>`).join("")}</select></label>
     <label>Date<input id="lf_date" type="date" value="${today()}"></label>
@@ -3243,7 +3272,7 @@ function renderClients(){
     .sort((a,b)=>b.last.localeCompare(a.last)||(a.c.name||"").localeCompare(b.c.name||""));
   if(!clients.length){el.innerHTML=`<div class="empty"><h3>No clients yet</h3><p>Press “+ Add client”, or add one from a property's “Interested clients” section.</p></div>`;return}
   el.innerHTML=`<div class="panel"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Client</th><th>Came from</th><th>Interested in</th><th>Furthest stage</th><th class="r">Last contact</th></tr></thead><tbody>
-    ${rows.map(({c,ls,bought,last})=>`<tr data-oc="${esc(c.id)}"><td><b>${esc(c.name)}</b>${c.phone||c.line?`<br><span class="muted">${esc([c.phone,c.line].filter(Boolean).join(" · "))}</span>`:""}</td><td>${esc(c.source||"–")}${c.sale?`<br><span class="muted">Sale: ${esc(c.sale)}</span>`:""}</td>
+    ${rows.map(({c,ls,bought,last})=>`<tr data-oc="${esc(c.id)}"><td><b>${esc(c.name)}</b>${c.phone||c.line?`<br><span class="muted">${esc([c.phone,c.line].filter(Boolean).join(" · "))}</span>`:""}</td><td>${esc(c.source||"–")}${c.sale?`<br><span class="muted">Sale: ${esc(c.sale)}</span>`:""}${budgetTxt(c)?`<br><span class="muted">Budget ${esc(budgetTxt(c))}</span>`:""}</td>
       <td>${ls.length?ls.map(x=>{const l=listings.find(y=>y.id===x.listingId);return `<span class="code">${esc(l?.code||"Deleted")}</span>`}).join("<br>"):'<span class="muted">–</span>'}</td>
       <td>${bought.length?stagePill("won"):ls.length?stagePill(bestStage(ls)):'<span class="muted">–</span>'}</td><td class="r">${fmtDate(last)}</td></tr>`).join("")||`<tr><td colspan="5" class="muted">No client matches “${esc(q)}”.</td></tr>`}
   </tbody></table></div></div>`;
@@ -3256,12 +3285,17 @@ function openClientDrawer(cid){
   openClient=cid;openId=null;
   const ls=leadsOfClient(cid).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const bought=listings.filter(l=>l.buyerClientId===cid);
-  const facts=[["Phone",c.phone],["LINE / WeChat",c.line],["Nationality",c.nationality],["Came from",c.source],["Sale in charge",c.sale],["PDPA consent",c.consent?"Yes":"Not recorded"],["Added",c.createdAt?fmtDate(new Date(c.createdAt).toISOString().slice(0,10)):""]].filter(([,v])=>v);
+  const facts=[["Phone",c.phone],["LINE ID",c.line],["WeChat / WhatsApp",c.wechat],["Email",c.email],["Nationality",c.nationality],["Came from",c.source],["Sale in charge",c.sale],["PDPA consent",c.consent?"Yes":"Not recorded"],["Added",c.createdAt?fmtDate(new Date(c.createdAt).toISOString().slice(0,10)):""]].filter(([,v])=>v);
+  const want=[["Looking to",c.wantDeal==="rent"?"Rent":c.budgetMin||c.budgetMax||c.purpose||(c.wantTypes||[]).length?"Buy":""],["Purpose",CPURPOSE[c.purpose]],["Budget",budgetTxt(c)],["Type",(c.wantTypes||[]).map(k=>SEG.type.map[k]).join(", ")],["Area",(c.wantZones||[]).map(k=>{const [cc,z]=k.split(".");return zName(cc,z)}).join(", ")],["Other",c.wantNote]].filter(([,v])=>v);
+  const hasWant=c.budgetMin||c.budgetMax||(c.wantTypes||[]).length||(c.wantZones||[]).length;
+  const mt=hasWant?matchesFor(c):[];
   showDrawer(`<div class="dhead"><span class="code">Client</span><button class="x" id="dclose" aria-label="Close">×</button></div>
     <div class="dbody" id="clientBox">
       <div><h2 class="dtitle" style="margin:0">${esc(c.name)}</h2>${bought.length?`<div style="margin-top:8px">${stagePill("won")} <span class="muted">${bought.map(l=>esc(l.code)).join(", ")}</span></div>`:""}</div>
       <dl class="facts">${facts.map(([a,b])=>`<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
       ${c.note?`<div class="sect"><h3>Note</h3><p>${esc(c.note)}</p></div>`:""}
+      ${want.length?`<div class="sect"><h3>Looking for</h3><dl class="facts">${want.map(([a,b])=>`<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></div>`:""}
+      ${hasWant?`<div class="sect"><h3>Properties that fit · ${mt.length}</h3><div class="leads">${mt.length?mt.slice(0,8).map(({l,why,linked})=>`<div class="lead"><div><button class="linkbtn" data-ol="${esc(l.id)}">${esc(l.code)}</button> <span>${esc(nm(l))}</span><div class="muted">${money(c.wantDeal==="rent"?l.rentPrice:l.price,l.currency)} · fits ${why.join(", ")}</div></div><div>${linked?'<span class="muted">Linked</span>':`<button class="btn" type="button" data-addl="${esc(l.id)}">+ Link</button>`}</div></div>`).join(""):'<p class="muted" style="margin:0">No property in hand fits these conditions yet.</p>'}</div></div>`:""}
       <div class="sect"><h3>Properties of interest · ${ls.length}</h3><div class="leads">${ls.length?ls.map(x=>{const l=listings.find(y=>y.id===x.listingId);return `<div class="lead"><div><button class="linkbtn" data-ol="${esc(x.listingId)}">${esc(l?.code||"Deleted listing")}</button> <span>${esc(l?nm(l):"")}</span><div class="muted">${fmtDate(x.date)}${x.note?" · "+esc(x.note):""}</div></div><div>${stagePill(x.stage)}</div></div>`}).join(""):'<p class="muted" style="margin:0">Not linked to any property yet.</p>'}
         <div class="dactions"><select class="btn" id="cAddL"><option value="">+ Link a property…</option>${listings.filter(l=>!ls.some(x=>x.listingId===l.id)).sort((a,b)=>a.seq-b.seq).map(l=>`<option value="${esc(l.id)}">${esc(l.code)} · ${esc(nm(l))}</option>`).join("")}</select></div></div></div>
       <div class="dactions"><button class="btn" id="cEdit">Edit client</button><button class="btn danger" id="cDel" style="margin-left:auto" ${bought.length?'disabled title="This client is recorded as a buyer"':""}>Delete client</button></div>
@@ -3269,6 +3303,7 @@ function openClientDrawer(cid){
     </div>`);
   $("#dclose").onclick=()=>{openClient=null;closeDrawer()};
   $("#drawer").querySelectorAll("[data-ol]").forEach(b=>b.onclick=()=>{openClient=null;openDrawer(b.dataset.ol)});
+  $("#drawer").querySelectorAll("[data-addl]").forEach(b=>b.onclick=async()=>{try{await db.collection("interests").doc(newId("i")).set({listingId:b.dataset.addl,clientId:cid,stage:"inquiry",date:today(),note:"Suggested from budget match",createdAt:Date.now(),updatedAt:Date.now()});toast("Property linked")}catch(err){toast("Couldn't save: "+(err.message||err.code))}});
   $("#cAddL").onchange=async e=>{const lid=e.target.value;if(!lid)return;try{await db.collection("interests").doc(newId("i")).set({listingId:lid,clientId:cid,stage:"inquiry",date:today(),note:"",createdAt:Date.now(),updatedAt:Date.now()});toast("Property linked")}catch(err){toast("Couldn't save: "+(err.message||err.code))}};
   $("#cEdit").onclick=()=>openClientForm(c);
   $("#cDel").onclick=()=>$("#cDelConfirm").hidden=false;
@@ -3276,21 +3311,34 @@ function openClientDrawer(cid){
 }
 function openClientForm(c){
   const isNew=!c;c=c||{};
-  const F=(id,lab,v,type="text",cls="")=>`<label class="${cls}">${lab}<input id="cf_${id}" type="${type}" value="${esc(v||"")}"></label>`;
+  const F=(id,lab,v,type="text",cls="",ph="")=>`<label class="${cls}">${lab}<input id="cf_${id}" type="${type}" value="${esc(v??"")}" ${ph?`placeholder="${esc(ph)}"`:""} ${type==="number"?'inputmode="decimal"':""}></label>`;
+  const zoneOpts=Object.keys(SEG.zone.by).flatMap(cc=>Object.keys(SEG.zone.by[cc]).map(z=>[cc+"."+z,zName(cc,z)+(cc!=="TH"?" · "+cName(cc):"")]));
+  const chk=(name,val,lab,on)=>`<label class="inline"><input type="checkbox" name="${name}" value="${esc(val)}" ${on?"checked":""}> ${esc(lab)}</label>`;
   showDrawer(`<div class="dhead"><span class="code">${isNew?"New client":"Edit client"}</span><button class="x" id="dclose" aria-label="Close">×</button></div>
     <form class="dbody" id="cform"><div class="form">
-      ${F("name","Name *",c.name,"text","full")}${F("phone","Phone",c.phone)}${F("line","LINE / WeChat",c.line)}
+      <fieldset><legend>Contact</legend>
+      ${F("name","Name *",c.name,"text","full")}${F("phone","Phone",c.phone,"tel")}${F("line","LINE ID",c.line)}
+      ${F("wechat","WeChat / WhatsApp",c.wechat)}${F("email","Email",c.email,"email")}
       ${F("nationality","Nationality",c.nationality)}
       <label>Came from<select id="cf_source"><option value="">–</option>${CSOURCES.map(x=>`<option ${c.source===x?"selected":""}>${x}</option>`).join("")}</select></label>
       ${F("sale","Sale in charge",c.sale)}
+      <label class="inline full"><input type="checkbox" id="cf_consent" ${c.consent?"checked":""}> Client agreed to KIOSA keeping these details (PDPA)</label></fieldset>
+      <fieldset><legend>What they are looking for</legend>
+      <p class="help">Used to suggest other properties that fit. Rough figures are fine.</p>
+      <label>Buy or rent<select id="cf_wantDeal"><option value="buy" ${c.wantDeal!=="rent"?"selected":""}>Buy</option><option value="rent" ${c.wantDeal==="rent"?"selected":""}>Rent</option></select></label>
+      <label>Purpose<select id="cf_purpose"><option value="">–</option>${Object.entries(CPURPOSE).map(([k,t])=>`<option value="${k}" ${c.purpose===k?"selected":""}>${t}</option>`).join("")}</select></label>
+      ${F("budgetMin","Budget from (THB)",c.budgetMin,"number","","e.g. 30000000")}${F("budgetMax","Budget up to (THB)",c.budgetMax,"number","","e.g. 60000000")}
+      <div class="full"><div class="cloc" style="margin-bottom:6px">Property type</div><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${Object.entries(SEG.type.map).map(([k,t])=>chk("cf_type",k,t,(c.wantTypes||[]).includes(k))).join("")}</div></div>
+      <div class="full"><div class="cloc" style="margin-bottom:6px">Preferred area</div><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${zoneOpts.map(([k,t])=>chk("cf_zone",k,t,(c.wantZones||[]).includes(k))).join("")}</div></div>
+      ${F("wantNote","Other requirements",c.wantNote,"text","full","e.g. near international school, river view, min. 4 bedrooms")}</fieldset>
       <label class="full">Note<textarea id="cf_note">${esc(c.note||"")}</textarea></label>
-      <label class="inline full"><input type="checkbox" id="cf_consent" ${c.consent?"checked":""}> Client agreed to KIOSA keeping these details (PDPA)</label>
     </div><div class="dactions"><button class="btn primary" type="submit">${isNew?"Save client":"Save changes"}</button><button class="btn ghost" type="button" id="cf_cancel">Cancel</button></div></form>`);
   $("#dclose").onclick=$("#cf_cancel").onclick=()=>isNew?closeDrawer():openClientDrawer(c.id);
-  $("#cform").onsubmit=async e=>{e.preventDefault();const v=k=>$("#cf_"+k).value.trim();
+  $("#cform").onsubmit=async e=>{e.preventDefault();const v=k=>$("#cf_"+k).value.trim(),n=k=>{const x=v(k);return x===""?null:Number(x)};
     if(!v("name")){toast("Add the client's name");return}
-    const id=c.id||newId("c");
-    const data={name:v("name"),phone:v("phone"),line:v("line"),nationality:v("nationality"),source:$("#cf_source").value,sale:v("sale"),note:v("note"),consent:$("#cf_consent").checked,updatedAt:Date.now()};
+    const id=c.id||newId("c");const all=nm=>[...document.querySelectorAll(`input[name="${nm}"]:checked`)].map(x=>x.value);
+    const data={name:v("name"),phone:v("phone"),line:v("line"),wechat:v("wechat"),email:v("email"),nationality:v("nationality"),source:$("#cf_source").value,sale:v("sale"),note:v("note"),consent:$("#cf_consent").checked,
+      wantDeal:$("#cf_wantDeal").value,purpose:$("#cf_purpose").value,budgetMin:n("budgetMin"),budgetMax:n("budgetMax"),wantTypes:all("cf_type"),wantZones:all("cf_zone"),wantNote:v("wantNote"),updatedAt:Date.now()};
     try{if(isNew)await db.collection("clients").doc(id).set({...data,createdAt:Date.now()});else await db.collection("clients").doc(id).update(data);toast("Client saved");setTimeout(()=>openClientDrawer(id),250)}catch(err){toast("Couldn't save: "+(err.message||err.code))}};
 }
 /* dashboard: client interest */
